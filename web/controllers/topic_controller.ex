@@ -2,6 +2,12 @@ defmodule Discuss.TopicController do
   use Discuss.Web, :controller
   alias Discuss.Topic
 
+  # Similar to 'before_action' in Rails.
+  # A module plug.
+  plug Discuss.Plugs.RequireAuth when action in [:new, :create, :edit, :update, :delete]
+  # A function plug.
+  plug :check_topic_owner when action in [:edit, :update, :delete]
+
   def index(conn, _params) do
     topics = Repo.all(Topic)
     
@@ -19,7 +25,11 @@ defmodule Discuss.TopicController do
   def create(conn, %{"topic" => topic}) do
     # In Rails this would be the equivalent of a params created model like:
     # @topic = Topic.new(topic_params)
-    changeset = Topic.changeset(%Topic{}, topic)
+    # changeset = Topic.changeset(%Topic{}, topic)
+
+    changeset = conn.assigns.user
+                |> build_assoc(:topics)
+                |> Topic.changeset(topic)
 
     case Repo.insert(changeset) do
       {:ok, _topic} ->
@@ -57,5 +67,18 @@ defmodule Discuss.TopicController do
     conn
     |> put_flash(:info, "Topic deleted")
     |> redirect(to: topic_path(conn, :index))
+  end
+
+  defp check_topic_owner(conn, _params) do
+    %{params: %{"id" => topic_id}} = conn
+
+    if Repo.get(Topic, topic_id).user_id == conn.assigns.user.id do
+      conn
+    else
+      conn
+      |> put_flash(:error, "You are not the topic owner")
+      |> redirect(to: topic_path(conn, :index))
+      |> halt()
+    end
   end
 end
